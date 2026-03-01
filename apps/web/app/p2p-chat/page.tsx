@@ -237,12 +237,13 @@ export default function P2PChatPage() {
   }
 
   function createPeer(peerId?: string) {
-    const peer = new Peer(peerId ?? undefined, {
+    const options = {
       host: PEER_HOST,
       port: PEER_PORT,
       path: PEER_PATH,
       secure: true
-    });
+    };
+    const peer = peerId ? new Peer(peerId, options) : new Peer(options);
     peerRef.current = peer;
     peer.on("open", () => {
       setStatus("Connected to relay");
