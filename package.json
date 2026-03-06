@@ -1,16 +1,27 @@
 {
-  "name": "couple-cinema",
+  "name": "couple-cinema-platform",
+  "version": "1.0.0",
   "private": true,
-  "version": "0.1.0",
   "workspaces": [
-    "apps/*"
+    "server"
   ],
   "scripts": {
-    "dev": "concurrently \"npm run dev -w apps/server\" \"npm run dev -w apps/web\"",
-    "build": "npm run build -w apps/server && npm run build -w apps/web",
-    "start": "concurrently \"npm run start -w apps/server\" \"npm run start -w apps/web\"",
-    "db:generate": "npm run prisma:generate -w apps/server",
-    "db:migrate": "npm run prisma:migrate -w apps/server"
+    "setup": "node scripts/setup.mjs",
+    "dev": "concurrently \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:web": "next dev -p 3000",
+    "dev:api": "npm run dev --workspace server",
+    "build": "next build && npm run build --workspace server",
+    "start": "concurrently \"npm run start:api\" \"npm run start:web\"",
+    "start:web": "next start -p 3000",
+    "start:api": "npm run start --workspace server",
+    "selfhost": "docker compose up -d --build",
+    "selfhost:stop": "docker compose down"
+  },
+  "dependencies": {
+    "next": "^15.3.2",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "socket.io-client": "^4.8.1"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

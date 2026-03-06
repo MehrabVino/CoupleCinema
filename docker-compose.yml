@@ -1,0 +1,29 @@
+services:
+  chat-server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    container_name: openchat-server
+    environment:
+      PORT: 4000
+      CLIENT_ORIGIN: http://localhost:3000
+      JWT_SECRET: please-change-this-secret
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./server/data:/app/server/data
+    restart: unless-stopped
+
+  web-app:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:4000
+        NEXT_PUBLIC_SOCKET_URL: http://localhost:4000
+    container_name: couplecinema-web
+    depends_on:
+      - chat-server
+    ports:
+      - "3000:3000"
+    restart: unless-stopped

@@ -1,9 +1,5 @@
 node_modules
-.next
 dist
-coverage
+.next
 .env
-.env.local
-apps/server/uploads/*
-!apps/server/uploads/.gitkeep
-
+server/data

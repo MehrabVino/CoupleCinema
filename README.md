@@ -1,130 +1,46 @@
-# CoupleCinema
+# CoupleCinema Platform
 
-Realtime watch-party app for 2-4 users:
-- Host creates a session and uploads a video
-- Participants join with a short code
-- Host controls synced playback for everyone
-- Users can chat, share images, and communicate via webcam/audio (WebRTC)
-- Includes a separate P2P encrypted chat page that works if the main server is down (uses public PeerJS relay)
+Minimal, responsive platform with a Next.js frontend and Fastify + Socket.IO API.
 
 ## Stack
 
-- Web: Next.js + React + TypeScript
-- Server: Express + Socket.IO + TypeScript
-- Database: PostgreSQL + Prisma
-- Infra: PostgreSQL, Redis, Coturn (TURN server)
+- Frontend: Next.js (App Router), React 19
+- API: Fastify + Socket.IO
+- Database: SQLite (`better-sqlite3`)
+- Auth: JWT
 
-## Project Structure
+## Modules
 
-```txt
-apps/
-  server/   # API + Socket.IO + Prisma
-  web/      # Next.js client
-```
+- Open Chat: current realtime chat app
+- Open Meet: Jitsi Meet launcher
+- Open File Sharing: PairDrop launcher
+- Couple Cinema: Syncplay launcher
 
-## 1) Prerequisites
+## Local Development
 
-- Node.js 20+
-- npm 10+
-- PostgreSQL 15+
-- Redis 7+
-- Coturn (TURN server)
+1. `npm run setup`
+2. `npm install`
+3. `npm run dev`
+4. Open `http://localhost:3000`
 
-## 2) Start Infra (Local)
+API health: `http://localhost:4000/api/health`
 
-Start your local services:
-- PostgreSQL on `localhost:5432`
-- Redis on `localhost:6379`
-- Coturn on `localhost:3478`
+## Docker
 
-## 3) Environment
+1. `npm run selfhost`
+2. Open `http://localhost:3000`
+3. Stop with `npm run selfhost:stop`
 
-Create `.env` in project root:
+## Environment
 
-```env
-PORT=4000
-WEB_ORIGIN=http://localhost:3000
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/couplecinema?schema=public
-MAX_VIDEO_MB=2048
-NEXT_PUBLIC_API_URL=http://localhost:4000
-NEXT_PUBLIC_WS_URL=http://localhost:4000
-```
+Copy `.env.example` to `.env` and adjust:
 
-## 4) Install + Database
+- `PORT` default: `4000`
+- `CLIENT_ORIGIN` default: `http://localhost:3000`
+- `JWT_SECRET` strong random value
+- `NEXT_PUBLIC_API_URL` default: `http://localhost:4000`
+- `NEXT_PUBLIC_SOCKET_URL` default: `http://localhost:4000`
 
-```bash
-npm install
-npm run db:generate
-npm run db:migrate -- --name init
-```
+## License
 
-## 5) Run Dev
-
-```bash
-npm run dev
-```
-
-- Web app: `http://localhost:3000`
-- API/Socket server: `http://localhost:4000`
-
-## 6) Test Flow (Watch Party)
-
-1. Open app in browser window A, create session, upload a video.
-2. Copy session code.
-3. Open window B (or another device), join with the code.
-4. Grant camera/microphone permissions.
-5. Verify:
-   - video playback sync
-   - text chat
-   - image sharing
-   - live webcam/audio
-
-## 7) P2P Encrypted Chat (Server-Down Friendly)
-
-- Route: `http://localhost:3000/p2p-chat`
-- Create a room, copy the invite link, and open it from another device/browser.
-- Messages are end-to-end encrypted with AES-GCM and stored locally in the browser.
-- Signaling uses the public PeerJS relay; if that relay is down, peers cannot connect.
-
-## 8) Production Publish Checklist
-
-1. Use strong TURN credentials (Coturn).
-2. Run app behind HTTPS (required for reliable WebRTC on non-localhost).
-3. Set CORS and env values for your real domain.
-4. Use object storage/CDN for video and image assets (S3-compatible).
-5. Add auth/invite controls before public release.
-6. Add rate limits and upload size limits based on your infra budget.
-
-## 9) Deploy (Vercel for Web)
-
-Vercel hosts the Next.js web app. The Express server must be deployed separately
-(Render/Fly/Railway/your VPS) because it runs Socket.IO + uploads.
-
-Vercel steps:
-
-1. Create a new Vercel project from the repo.
-2. Set Root Directory to `apps/web`.
-3. Set environment variables:
-   - `NEXT_PUBLIC_API_URL=https://api.your-domain.com`
-   - `NEXT_PUBLIC_WS_URL=https://api.your-domain.com`
-4. Deploy.
-
-Server environment example:
-
-```env
-WEB_ORIGIN=https://your-frontend-domain.com
-PORT=4000
-DATABASE_URL=postgresql://USER:PASS@HOST:5432/couplecinema?schema=public
-NEXT_PUBLIC_API_URL=https://api.your-domain.com
-NEXT_PUBLIC_WS_URL=https://api.your-domain.com
-TURN_REALM=your-domain.com
-TURN_USER=turnuser
-TURN_PASSWORD=turnpassword
-```
-
-## Notes
-
-- Room size is enforced at maximum 4 live connections.
-- Playback controls are host-only.
-- Uploaded media is stored in `apps/server/uploads` in this scaffold.
-- Large uploads are limited by `MAX_VIDEO_MB` and by your hosting provider's max request size.
+MIT
