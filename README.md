@@ -1,46 +1,115 @@
-# CoupleCinema Platform
+# Together Space
 
-Minimal, responsive platform with a Next.js frontend and Fastify + Socket.IO API.
+Together Space is an open-source collaboration platform that combines:
 
-## Stack
+- real-time chat (groups, channels, private messages, reactions, attachments)
+- video meeting rooms (up to 8 users)
+- personal file sharing/drive
+- synchronized watch rooms with room chat and voice
 
-- Frontend: Next.js (App Router), React 19
-- API: Fastify + Socket.IO
-- Database: SQLite (`better-sqlite3`)
-- Auth: JWT
+The repository is structured for maintainability and onboarding: layered frontend services, MVC-style backend, and isolated realtime room managers.
 
-## Modules
+## Why this project exists
 
-- Open Chat: current realtime chat app
-- Open Meet: Jitsi Meet launcher
-- Open File Sharing: PairDrop launcher
-- Couple Cinema: Syncplay launcher
+Most teams switch between many tools to chat, call, share files, and watch content together. Together Space provides one developer-friendly platform where those flows live in one app and one auth/session model.
 
-## Local Development
+## Main features
 
-1. `npm run setup`
-2. `npm install`
-3. `npm run dev`
-4. Open `http://localhost:3000`
+- Unified authentication and session flow
+- Global app shell with shared navigation and profile controls
+- Chat module with:
+  - channels/groups/PV
+  - emoji reactions
+  - attachment messages (image/video/file)
+  - saved messages
+- Meet module with:
+  - realtime room presence
+  - WebRTC media + signaling
+  - emoji bursts
+  - max 8 participants per room
+- Files module with:
+  - folder creation
+  - upload/download
+  - rename/delete
+  - share tokens
+- Watch module with:
+  - synced playback state (URL/time/play-pause)
+  - room chat
+  - local video loading
+  - voice channel (WebRTC audio)
+  - max 8 participants per room
 
-API health: `http://localhost:4000/api/health`
+## Quick start (local)
+
+1. Copy env file:
+   - `cp .env.example .env` (Linux/macOS)
+   - `copy .env.example .env` (Windows)
+2. Install dependencies:
+   - `npm install`
+3. Run both frontend and backend:
+   - `npm run dev`
+4. Open:
+   - web: `http://localhost:3000`
+   - health: `http://localhost:4000/api/health`
 
 ## Docker
 
-1. `npm run selfhost`
-2. Open `http://localhost:3000`
-3. Stop with `npm run selfhost:stop`
+- Start: `npm run selfhost`
+- Stop: `npm run selfhost:stop`
 
-## Environment
+## Project structure
 
-Copy `.env.example` to `.env` and adjust:
+### Frontend
 
-- `PORT` default: `4000`
-- `CLIENT_ORIGIN` default: `http://localhost:3000`
-- `JWT_SECRET` strong random value
-- `NEXT_PUBLIC_API_URL` default: `http://localhost:4000`
-- `NEXT_PUBLIC_SOCKET_URL` default: `http://localhost:4000`
+- `app/`: Next.js App Router pages/layout
+- `components/`: module UIs + controller hooks
+- `lib/client/repositories/`: API adapters
+- `lib/client/services/`: business logic layer
+- `lib/client/adapters/`: transport adapters (Socket.IO)
+- `lib/client/factories/createClientServices.js`: dependency composition root
+
+### Backend
+
+- `server/src/routes/`: HTTP route definitions
+- `server/src/controllers/`: controller handlers
+- `server/src/services/`: application services
+- `server/src/repositories/`: data access layer
+- `server/src/realtime/`: room managers + Socket.IO handlers
+- `server/src/app.js`: app assembly/composition
+- `server/src/server.js`: process bootstrap
+
+## Documentation map
+
+- User guide: `docs/USER_GUIDE.md`
+- Developer setup and workflow: `docs/DEVELOPER_GUIDE.md`
+- Architecture and design decisions: `docs/ARCHITECTURE.md`
+- HTTP + realtime reference: `docs/API_AND_EVENTS.md`
+- Open-source contribution process: `CONTRIBUTING.md`
+- Security reporting: `SECURITY.md`
+- Community rules: `CODE_OF_CONDUCT.md`
+
+## Environment variables
+
+See `.env.example` for defaults:
+
+- `PORT`
+- `CLIENT_ORIGIN`
+- `JWT_SECRET`
+- `NEXT_PUBLIC_API_URL`
+- `NEXT_PUBLIC_SOCKET_URL`
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_USER`
+- `SMTP_PASS`
+- `SMTP_FROM`
+
+## Open-source expectations
+
+- Small, reviewable PRs
+- Clear commit messages and test notes
+- Backward-compatible API/realtime changes where possible
+- Documentation update in same PR for behavior changes
 
 ## License
 
-MIT
+MIT (see `LICENSE`).

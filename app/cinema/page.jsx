@@ -1,6 +1,5 @@
-import ExternalToolPage from "@/components/ExternalToolPage";
-import { TOOL_LINKS } from "@/lib/modules";
+import CinemaApp from "@/components/cinema/CinemaApp";
 
 export default function CinemaPage() {
-  return <ExternalToolPage {...TOOL_LINKS.cinema} />;
+  return <CinemaApp />;
 }

@@ -4,7 +4,7 @@ export default function ExternalToolPage({ title, description, url, button }) {
   return (
     <main className="tool-wrap">
       <section className="tool-card">
-        <p className="eyebrow">CoupleCinema Platform</p>
+        <p className="eyebrow">Together Space</p>
         <h1>{title}</h1>
         <p>{description}</p>
         <div className="row">

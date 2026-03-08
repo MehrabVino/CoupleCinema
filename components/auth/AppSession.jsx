@@ -1,15 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import {
-  authConfirmEmail,
-  authLogin,
-  authRegister,
-  fetchMe,
-  tokenClear,
-  tokenGet,
-  tokenSet
-} from "@/lib/api";
+import { getClientServices } from "@/lib/client/factories/createClientServices";
 
 const SessionContext = createContext(null);
 
@@ -35,12 +27,12 @@ function ModernAuthCard({ onLogin, onRegister, onConfirm }) {
       if (mode === "signup") {
         const data = await onRegister(email.trim().toLowerCase(), username.trim(), password);
         setPendingEmail(data.email || email.trim().toLowerCase());
-        setInfo("Verification code sent to your Gmail.");
+        setInfo("We sent a verification code to your email.");
         setMode("confirm");
         return;
       }
       await onConfirm((pendingEmail || email).trim().toLowerCase(), code.trim());
-      setInfo("Email confirmed. Please login.");
+      setInfo("Email confirmed. You can sign in now.");
       setMode("login");
     } catch (err) {
       setError(err.message);
@@ -50,32 +42,32 @@ function ModernAuthCard({ onLogin, onRegister, onConfirm }) {
   return (
     <main className="app-auth-shell">
       <form className="app-auth-card" onSubmit={submit}>
-        <p className="eyebrow">CoupleCinema Platform</p>
-        <h1>{mode === "login" ? "Welcome Back" : mode === "signup" ? "Create Account" : "Confirm Email"}</h1>
-        <p className="muted">Sign in with Gmail to continue to all apps.</p>
+        <p className="eyebrow">Together Space</p>
+        <h1>{mode === "login" ? "Welcome back" : mode === "signup" ? "Create your account" : "Verify your email"}</h1>
+        <p className="muted">Sign in to chat, meet, share files, and watch together.</p>
 
         {mode !== "confirm" ? (
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@gmail.com"
+            placeholder="Email"
             required
           />
         ) : (
-          <input value={pendingEmail || email} onChange={(e) => setPendingEmail(e.target.value)} placeholder="you@gmail.com" required />
+          <input value={pendingEmail || email} onChange={(e) => setPendingEmail(e.target.value)} placeholder="Email" required />
         )}
         {mode === "signup" ? (
-          <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="username" required />
+          <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Username" required />
         ) : null}
         {mode === "confirm" ? (
-          <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="verification code" required />
+          <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="Code" required />
         ) : (
           <input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="password"
+            placeholder="Password"
             required
           />
         )}
@@ -84,17 +76,14 @@ function ModernAuthCard({ onLogin, onRegister, onConfirm }) {
         {error ? <div className="error">{error}</div> : null}
 
         <button className="button" type="submit">
-          {mode === "login" ? "Login" : mode === "signup" ? "Sign Up" : "Confirm"}
+          {mode === "login" ? "Continue" : mode === "signup" ? "Create account" : "Verify code"}
         </button>
         <div className="row">
           <button type="button" className="button ghost" onClick={() => setMode("login")}>
-            Login
+            Sign in
           </button>
           <button type="button" className="button ghost" onClick={() => setMode("signup")}>
-            Sign Up
-          </button>
-          <button type="button" className="button ghost" onClick={() => setMode("confirm")}>
-            Confirm
+            Sign up
           </button>
         </div>
       </form>
@@ -105,49 +94,38 @@ function ModernAuthCard({ onLogin, onRegister, onConfirm }) {
 export function AppSessionProvider({ children }) {
   const [user, setUser] = useState(null);
   const [ready, setReady] = useState(false);
+  const [services] = useState(() => getClientServices());
 
   useEffect(() => {
     async function init() {
-      const token = tokenGet();
-      if (!token) {
-        setReady(true);
-        return;
-      }
-      try {
-        const me = await fetchMe();
-        setUser(me.user);
-      } catch {
-        tokenClear();
-        setUser(null);
-      } finally {
-        setReady(true);
-      }
+      const restoredUser = await services.sessionService.restore();
+      setUser(restoredUser);
+      setReady(true);
     }
     init();
-  }, []);
+  }, [services]);
 
   async function login(email, password) {
-    const data = await authLogin(email, password);
-    tokenSet(data.token);
-    setUser(data.user);
+    const nextUser = await services.sessionService.login(email, password);
+    setUser(nextUser);
   }
 
   async function register(email, username, password) {
-    return authRegister(email, username, password);
+    return services.sessionService.register(email, username, password);
   }
 
   async function confirm(email, code) {
-    return authConfirmEmail(email, code);
+    return services.sessionService.confirm(email, code);
   }
 
   function logout() {
-    tokenClear();
+    services.sessionService.logout();
     setUser(null);
   }
 
   const value = useMemo(
-    () => ({ user, setUser, ready, login, register, confirm, logout }),
-    [user, ready]
+    () => ({ user, setUser, ready, login, register, confirm, logout, services }),
+    [user, ready, services]
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
@@ -173,4 +151,3 @@ export function useAppSession() {
   if (!ctx) throw new Error("useAppSession must be used inside AppSessionProvider");
   return ctx;
 }
-

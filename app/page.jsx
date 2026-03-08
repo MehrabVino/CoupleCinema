@@ -5,11 +5,9 @@ export default function HomePage() {
   return (
     <main className="container">
       <section className="hero">
-        <p className="eyebrow">CoupleCinema Platform</p>
-        <h1>One Minimal Hub For Communication And Shared Time</h1>
-        <p>
-          Select a module to chat, meet, share files, or watch movies in sync.
-        </p>
+        <p className="eyebrow">Together Space</p>
+        <h1>One place for chat, calls, files, and watch rooms</h1>
+        <p>Pick an app and start together.</p>
       </section>
       <section className="grid">
         {MODULES.map((module) => (

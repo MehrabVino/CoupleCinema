@@ -1,6 +1,5 @@
-import ExternalToolPage from "@/components/ExternalToolPage";
-import { TOOL_LINKS } from "@/lib/modules";
+import MeetApp from "@/components/meet/MeetApp";
 
 export default function MeetPage() {
-  return <ExternalToolPage {...TOOL_LINKS.meet} />;
+  return <MeetApp />;
 }

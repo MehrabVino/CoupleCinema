@@ -1,23 +1,7 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  createChat,
-  fetchChatMembers,
-  fetchChats,
-  fetchMessages,
-  joinChatByPublicId,
-  searchUsers,
-  startPrivateChat,
-  tokenGet,
-  tokenSet,
-  updateMyProfile,
-  updateChatName,
-  updateChatPublicId
-} from "@/lib/api";
-import { socketCreate } from "@/lib/socket";
-import { useAppSession } from "@/components/auth/AppSession";
+import { useEffect, useRef } from "react";
+import { useChatController } from "@/components/chat/useChatController";
 
 const REACTIONS = ["\u{1F44D}", "\u{2764}\u{FE0F}", "\u{1F525}", "\u{1F602}", "\u{1F44F}", "\u{1F389}"];
 
@@ -125,6 +109,23 @@ function UiIcon({ name }) {
       </svg>
     );
   }
+  if (name === "paperclip") {
+    return (
+      <svg {...common}>
+        <path d="M21.4 11.1l-8.5 8.5a6 6 0 1 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5" />
+      </svg>
+    );
+  }
+  if (name === "smile") {
+    return (
+      <svg {...common}>
+        <circle cx="12" cy="12" r="10" />
+        <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+        <line x1="9" y1="9" x2="9.01" y2="9" />
+        <line x1="15" y1="9" x2="15.01" y2="9" />
+      </svg>
+    );
+  }
   return (
     <svg {...common}>
       <path d="M5 12h14" />
@@ -138,460 +139,187 @@ function getAvatarLabel(name) {
   return source.charAt(0).toUpperCase();
 }
 
+function parseAttachment(content) {
+  const marker = "__ATTACHMENT__";
+  const text = String(content || "");
+  if (!text.startsWith(marker)) return null;
+  try {
+    const data = JSON.parse(text.slice(marker.length));
+    if (!data?.dataUrl || !data?.fileName) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
 export default function ChatApp() {
-  const { user, setUser: setSessionUser, logout: sessionLogout } = useAppSession();
-  const [darkMode, setDarkMode] = useState(false);
-  const [chats, setChats] = useState([]);
-  const [activeChatId, setActiveChatId] = useState("");
-  const [activeTypeTab, setActiveTypeTab] = useState("all");
-  const [newChatType, setNewChatType] = useState("group");
-  const [messagesByChat, setMessagesByChat] = useState({});
-  const [membersByChat, setMembersByChat] = useState({});
-  const [selectedMessageId, setSelectedMessageId] = useState("");
-  const [unreadByChat, setUnreadByChat] = useState({});
-  const [draft, setDraft] = useState("");
-  const [typing, setTyping] = useState([]);
-  const [onlineCount, setOnlineCount] = useState(0);
-  const [newChatName, setNewChatName] = useState("");
-  const [newPublicId, setNewPublicId] = useState("");
-  const [pvQuery, setPvQuery] = useState("");
-  const [pvResults, setPvResults] = useState([]);
-  const [joinPublicId, setJoinPublicId] = useState("");
-  const [chatFilter, setChatFilter] = useState("");
-  const [messageFilter, setMessageFilter] = useState("");
-  const [editingId, setEditingId] = useState("");
-  const [editingText, setEditingText] = useState("");
-  const [editingUserName, setEditingUserName] = useState("");
-  const [editingUserPublicId, setEditingUserPublicId] = useState("");
-  const [editingChatName, setEditingChatName] = useState("");
-  const [editingPublicId, setEditingPublicId] = useState("");
-  const [manageOpen, setManageOpen] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
-  const [userProfileOpen, setUserProfileOpen] = useState(false);
-  const [savedOnly, setSavedOnly] = useState(false);
-  const [savedMessageIds, setSavedMessageIds] = useState([]);
-  const [memberMenu, setMemberMenu] = useState(null);
-  const [isMobile, setIsMobile] = useState(false);
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [error, setError] = useState("");
-  const socketRef = useRef(null);
-  const endRef = useRef(null);
-  const messagesRef = useRef(null);
-  const autoScrollRef = useRef(true);
-
-  const activeChat = useMemo(
-    () => chats.find((chat) => chat.id === activeChatId) || null,
-    [chats, activeChatId]
-  );
-  const isOwner = Boolean(activeChat && user && activeChat.created_by === user.id);
-  const activeMessages = useMemo(() => messagesByChat[activeChatId] || [], [messagesByChat, activeChatId]);
-  const activeMembers = useMemo(() => membersByChat[activeChatId] || [], [membersByChat, activeChatId]);
-  const myMembership = useMemo(
-    () => activeMembers.find((member) => member.user_id === user?.id) || null,
-    [activeMembers, user]
-  );
-  const canWrite = !myMembership || myMembership.role === "owner" || myMembership.access_level !== "read-only";
-  const canSend = canWrite && !savedOnly;
-
-  const filteredChats = useMemo(() => {
-    const q = chatFilter.trim().toLowerCase();
-    let base = chats;
-    if (activeTypeTab !== "all") base = base.filter((c) => c.type === activeTypeTab);
-    if (!q) return base;
-    return base.filter(
-      (chat) =>
-        chat.name.toLowerCase().includes(q) ||
-        (chat.public_id || "").toLowerCase().includes(q) ||
-        chat.id.includes(q)
-    );
-  }, [chatFilter, chats, activeTypeTab]);
-
-  const filteredMessages = useMemo(() => {
-    const q = messageFilter.trim().toLowerCase();
-    const visibleMessages = activeMessages.filter((m) => !m.deleted_at);
-    const base = savedOnly ? visibleMessages.filter((m) => savedMessageIds.includes(m.id)) : visibleMessages;
-    if (!q) return base;
-    return base.filter(
-      (m) => (m.content || "").toLowerCase().includes(q) || (m.username || "").toLowerCase().includes(q)
-    );
-  }, [messageFilter, activeMessages, savedOnly, savedMessageIds]);
-
-  function logout() {
-    socketRef.current?.disconnect();
-    sessionLogout();
-    setChats([]);
-    setActiveChatId("");
-    setMessagesByChat({});
-    setMembersByChat({});
-    setUnreadByChat({});
-    setTyping([]);
-    setManageOpen(false);
-    setProfileOpen(false);
-    setUserProfileOpen(false);
-    setSavedOnly(false);
-    setSavedMessageIds([]);
-  }
-
-  async function loadChat(chatId) {
-    const data = await fetchMessages(chatId);
-    setMessagesByChat((prev) => ({ ...prev, [chatId]: data.messages }));
-  }
-
-  async function loadMembers(chatId) {
-    const data = await fetchChatMembers(chatId);
-    setMembersByChat((prev) => ({ ...prev, [chatId]: data.members }));
-  }
-
-  async function addChat() {
-    const name = newChatName.trim();
-    if (!name) return;
-    try {
-      const result = await createChat(name, newChatType, newPublicId.trim());
-      setChats((prev) => [...prev, result.chat]);
-      setNewChatName("");
-      setNewPublicId("");
-      setActiveChatId(result.chat.id);
-      setManageOpen(false);
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
-  async function onJoinByPublicId() {
-    const target = joinPublicId.trim().replace(/^@+/, "");
-    if (!target) return;
-    try {
-      const joined = await joinChatByPublicId(target);
-      const allChats = (await fetchChats()).chats;
-      setChats(allChats);
-      setActiveChatId(joined.chat.id);
-      setJoinPublicId("");
-      setManageOpen(false);
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
-  async function onSearchPvUsers() {
-    const q = pvQuery.trim();
-    if (!q) return;
-    try {
-      const data = await searchUsers(q);
-      setPvResults(data.users || []);
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
-  async function onStartPrivateChat(queryValue) {
-    const query = String(queryValue || "").trim();
-    if (!query) return;
-    try {
-      const result = await startPrivateChat(query);
-      const allChats = (await fetchChats()).chats;
-      setChats(allChats);
-      setActiveChatId(result.chat.id);
-      setPvQuery("");
-      setPvResults([]);
-      setManageOpen(false);
-      setMemberMenu(null);
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
-  async function onSavePublicId() {
-    const target = editingPublicId.trim();
-    if (!target || !activeChatId || !isOwner) return;
-    try {
-      const result = await updateChatPublicId(activeChatId, target);
-      setChats((prev) => prev.map((chat) => (chat.id === result.chat.id ? { ...chat, ...result.chat } : chat)));
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
-  async function onSaveChatName() {
-    const target = editingChatName.trim();
-    if (!target || !activeChatId || !isOwner) return;
-    try {
-      const result = await updateChatName(activeChatId, target);
-      setChats((prev) => prev.map((chat) => (chat.id === result.chat.id ? { ...chat, ...result.chat } : chat)));
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
-  async function onSaveUserProfile() {
-    const nextUsername = editingUserName.trim();
-    const nextPublicId = editingUserPublicId.trim();
-    if (!nextUsername && !nextPublicId) return;
-    try {
-      const result = await updateMyProfile({
-        username: nextUsername || undefined,
-        publicId: nextPublicId || undefined
-      });
-      if (result.token) tokenSet(result.token);
-      setSessionUser(result.user);
-      setEditingUserName(result.user.username || "");
-      setEditingUserPublicId(result.user.public_id || "");
-      setUserProfileOpen(false);
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
-  function toggleSavedMessage(messageId) {
-    setSavedMessageIds((prev) => (prev.includes(messageId) ? prev.filter((id) => id !== messageId) : [...prev, messageId]));
-  }
-
-  function sendMessage() {
-    const text = draft.trim();
-    if (!text || !activeChatId || !socketRef.current || !canSend) return;
-    socketRef.current.emit("message:send", { chatId: activeChatId, content: text });
-    socketRef.current.emit("typing:set", { chatId: activeChatId, isTyping: false });
-    setDraft("");
-  }
-
-  function startEdit(message) {
-    if (message.user_id !== user.id || message.deleted_at || !canWrite) return;
-    setEditingId(message.id);
-    setEditingText(message.content);
-  }
-
-  function cancelEdit() {
-    setEditingId("");
-    setEditingText("");
-  }
-
-  function saveEdit() {
-    const content = editingText.trim();
-    if (!content || !editingId || !socketRef.current || !canWrite) return;
-    socketRef.current.emit("message:edit", { messageId: editingId, content });
-    cancelEdit();
-  }
-
-  function removeMessage(message) {
-    if (message.user_id !== user.id || message.deleted_at || !socketRef.current || !canWrite) return;
-    socketRef.current.emit("message:delete", { messageId: message.id });
-  }
-
-  function toggleReaction(message, emoji) {
-    if (!socketRef.current || message.deleted_at || !canWrite) return;
-    socketRef.current.emit("reaction:toggle", { messageId: message.id, emoji, chatId: activeChatId });
-  }
+  const fileInputRef = useRef(null);
+  const roomHeadActionsRef = useRef(null);
+  const quickEmojis = [
+    "\u{1F642}",
+    "\u{1F60A}",
+    "\u{1F60E}",
+    "\u{1F970}",
+    "\u{1F44D}",
+    "\u{1F44E}",
+    "\u{1F44F}",
+    "\u{270C}\u{FE0F}",
+    "\u{1F44C}",
+    "\u{1F64C}",
+    "\u{2764}\u{FE0F}",
+    "\u{1F49B}",
+    "\u{1F499}",
+    "\u{1F525}",
+    "\u{1F389}",
+    "\u{1F680}",
+    "\u{1F31F}",
+    "\u{2728}",
+    "\u{1F600}",
+    "\u{1F602}",
+    "\u{1F923}",
+    "\u{1F609}",
+    "\u{1F60D}",
+    "\u{1F618}",
+    "\u{1F914}",
+    "\u{1F62E}",
+    "\u{1F62D}",
+    "\u{1F621}",
+    "\u{1F97A}",
+    "\u{1F4AF}"
+  ];
+  const {
+    user,
+    activeChatId,
+    setActiveChatId,
+    activeTypeTab,
+    setActiveTypeTab,
+    newChatType,
+    setNewChatType,
+    selectedMessageId,
+    setSelectedMessageId,
+    unreadByChat,
+    draft,
+    setDraft,
+    attachment,
+    emojiPanelOpen,
+    setEmojiPanelOpen,
+    typing,
+    onlineCount,
+    newChatName,
+    setNewChatName,
+    newPublicId,
+    setNewPublicId,
+    pvQuery,
+    setPvQuery,
+    pvResults,
+    joinPublicId,
+    setJoinPublicId,
+    chatFilter,
+    setChatFilter,
+    messageFilter,
+    setMessageFilter,
+    editingId,
+    editingText,
+    setEditingText,
+    editingChatName,
+    setEditingChatName,
+    editingPublicId,
+    setEditingPublicId,
+    manageOpen,
+    setManageOpen,
+    profileOpen,
+    setProfileOpen,
+    savedOnly,
+    setSavedOnly,
+    savedMessageIds,
+    memberMenu,
+    setMemberMenu,
+    isMobile,
+    mobileSidebarOpen,
+    setMobileSidebarOpen,
+    error,
+    socketRef,
+    endRef,
+    messagesRef,
+    autoScrollRef,
+    activeChat,
+    isOwner,
+    activeMembers,
+    canWrite,
+    canSend,
+    filteredChats,
+    filteredMessages,
+    addChat,
+    onJoinByPublicId,
+    onSearchPvUsers,
+    onStartPrivateChat,
+    onSavePublicId,
+    onSaveChatName,
+    toggleSavedMessage,
+    sendMessage,
+    pickAttachment,
+    clearAttachment,
+    addEmojiToDraft,
+    startEdit,
+    cancelEdit,
+    saveEdit,
+    removeMessage,
+    toggleReaction
+  } = useChatController();
 
   useEffect(() => {
-    if (!user) return;
-    fetchChats()
-      .then((data) => {
-        const list = data.chats || [];
-        setChats(list);
-        setActiveChatId((prev) => prev || list[0]?.id || "");
-      })
-      .catch((err) => setError(err.message));
-  }, [user]);
+    function onPointerDown(event) {
+      const target = event.target;
 
-  useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem("chat_dark_mode");
-      setDarkMode(saved === "1");
-    } catch {
-      setDarkMode(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem("chat_dark_mode", darkMode ? "1" : "0");
-    } catch {}
-  }, [darkMode]);
-
-  useEffect(() => {
-    function onResize() {
-      const mobile = window.innerWidth <= 900;
-      setIsMobile(mobile);
-      if (!mobile) setMobileSidebarOpen(false);
-    }
-    onResize();
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
-
-  useEffect(() => {
-    if (!user || !tokenGet()) return;
-    const socket = socketCreate(tokenGet());
-    socketRef.current = socket;
-
-    socket.on("connect", () => {
-      chats.forEach((c) => socket.emit("chat:join", { chatId: c.id }));
-    });
-
-    socket.on("message:new", (msg) => {
-      setMessagesByChat((prev) => ({
-        ...prev,
-        [msg.chat_id]: [...(prev[msg.chat_id] || []), msg]
-      }));
-      if (msg.chat_id !== activeChatId) {
-        setUnreadByChat((prev) => ({ ...prev, [msg.chat_id]: (prev[msg.chat_id] || 0) + 1 }));
+      if (manageOpen && !target.closest(".manage-flyout") && !target.closest(".fab-add")) {
+        setManageOpen(false);
       }
-    });
 
-    socket.on("message:updated", (msg) => {
-      setMessagesByChat((prev) => ({
-        ...prev,
-        [msg.chat_id]: (prev[msg.chat_id] || []).map((item) =>
-          item.id === msg.id ? { ...item, content: msg.content, edited_at: msg.edited_at } : item
-        )
-      }));
-    });
+      if (
+        profileOpen &&
+        !target.closest(".profile-panel") &&
+        !roomHeadActionsRef.current?.contains(target)
+      ) {
+        setProfileOpen(false);
+      }
 
-    socket.on("message:deleted", (msg) => {
-      setMessagesByChat((prev) => ({
-        ...prev,
-        [msg.chat_id]: (prev[msg.chat_id] || []).filter((item) => item.id !== msg.id)
-      }));
-      setSavedMessageIds((prev) => prev.filter((id) => id !== msg.id));
-      setSelectedMessageId((prev) => (prev === msg.id ? "" : prev));
-      setEditingId((prev) => (prev === msg.id ? "" : prev));
-      setEditingText("");
-    });
+      if (emojiPanelOpen && !target.closest("footer")) {
+        setEmojiPanelOpen(false);
+      }
 
-    socket.on("reaction:updated", (payload) => {
-      setMessagesByChat((prev) => {
-        const next = { ...prev };
-        for (const chatId of Object.keys(next)) {
-          next[chatId] = (next[chatId] || []).map((item) =>
-            item.id === payload.message_id
-              ? { ...item, reactions: payload.reactions, my_reactions: payload.my_reactions }
-              : item
-          );
-        }
-        return next;
-      });
-    });
-
-    socket.on("typing:update", (event) => {
-      if (event.chatId !== activeChatId) return;
-      setTyping((prev) =>
-        event.isTyping ? [...new Set([...prev, event.username])] : prev.filter((x) => x !== event.username)
-      );
-    });
-
-    socket.on("presence:update", ({ onlineUsers }) => setOnlineCount(onlineUsers.length));
-
-    socket.on("chat:added", ({ chat }) => {
-      if (!chat?.id) return;
-      setChats((prev) => {
-        if (prev.some((item) => item.id === chat.id)) return prev;
-        return [...prev, chat];
-      });
-      socket.emit("chat:join", { chatId: chat.id });
-    });
-
-    socket.on("member:access-updated", ({ chatId, member }) => {
-      setMembersByChat((prev) => ({
-        ...prev,
-        [chatId]: (prev[chatId] || []).map((item) => (item.user_id === member.user_id ? member : item))
-      }));
-    });
-
-    return () => socket.disconnect();
-  }, [user, activeChatId, chats]);
-
-  useEffect(() => {
-    if (!socketRef.current) return;
-    chats.forEach((c) => socketRef.current.emit("chat:join", { chatId: c.id }));
-  }, [chats]);
-
-  useEffect(() => {
-    if (!activeChatId || !user) return;
-    loadChat(activeChatId).catch((err) => setError(err.message));
-    loadMembers(activeChatId).catch((err) => setError(err.message));
-    socketRef.current?.emit("chat:join", { chatId: activeChatId });
-    setTyping([]);
-    setSelectedMessageId("");
-    setUnreadByChat((prev) => ({ ...prev, [activeChatId]: 0 }));
-  }, [activeChatId, user]);
-
-  useEffect(() => {
-    if (!activeChat) return;
-    setEditingChatName(activeChat.name || "");
-    setEditingPublicId(activeChat.public_id || "");
-    setMemberMenu(null);
-  }, [activeChat]);
-
-  useEffect(() => {
-    if (!user) return;
-    setEditingUserName(user.username || "");
-    setEditingUserPublicId(user.public_id || "");
-    const key = `saved_messages_${user.id}`;
-    try {
-      const raw = window.localStorage.getItem(key);
-      const parsed = raw ? JSON.parse(raw) : [];
-      setSavedMessageIds(Array.isArray(parsed) ? parsed.filter((id) => typeof id === "string") : []);
-    } catch {
-      setSavedMessageIds([]);
+      if (memberMenu?.member && !target.closest(".member-menu")) {
+        setMemberMenu(null);
+      }
     }
-  }, [user]);
 
-  useEffect(() => {
-    if (!user) return;
-    const key = `saved_messages_${user.id}`;
-    window.localStorage.setItem(key, JSON.stringify(savedMessageIds));
-  }, [savedMessageIds, user]);
+    function onKeyDown(event) {
+      if (event.key !== "Escape") return;
+      setManageOpen(false);
+      setProfileOpen(false);
+      setEmojiPanelOpen(false);
+      setMemberMenu(null);
+    }
 
-  useEffect(() => {
-    if (!autoScrollRef.current) return;
-    endRef.current?.scrollIntoView({ behavior: "auto" });
-  }, [activeMessages]);
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [emojiPanelOpen, manageOpen, memberMenu, profileOpen, setEmojiPanelOpen, setManageOpen, setMemberMenu, setProfileOpen]);
 
   if (!user) return null;
 
   return (
-    <div className={darkMode ? "chat-shell dark" : "chat-shell"}>
-      <Link className="hub-back" href="/">
-        Home
-      </Link>
+    <div className="chat-shell">
       {isMobile && mobileSidebarOpen ? (
         <button className="overlay" type="button" aria-label="Close chats panel" onClick={() => setMobileSidebarOpen(false)} />
       ) : null}
       <aside className={mobileSidebarOpen ? "sidebar open" : "sidebar"}>
         <div className="brand">
-          <button
-            className="brand-user profile-trigger"
-            type="button"
-            onClick={() => {
-              setUserProfileOpen((prev) => !prev);
-              setProfileOpen(false);
-            }}
-          >
+          <div className="brand-user">
             <small>Hello,</small>
             <h2>{user.username}</h2>
-          </button>
-          <div className="brand-controls">
-            <button
-              className={userProfileOpen ? "button icon-badge" : "button ghost icon-badge"}
-              onClick={() => {
-                setUserProfileOpen((prev) => !prev);
-                setProfileOpen(false);
-              }}
-              title={userProfileOpen ? "Close My Profile" : "My Profile"}
-              aria-label={userProfileOpen ? "Close My Profile" : "My Profile"}
-            >
-              <UiIcon name="user" />
-            </button>
-            <button
-              className={darkMode ? "button icon-badge" : "button ghost icon-badge"}
-              onClick={() => setDarkMode((prev) => !prev)}
-              title={darkMode ? "Light Mode" : "Dark Mode"}
-              aria-label={darkMode ? "Light Mode" : "Dark Mode"}
-            >
-              <UiIcon name={darkMode ? "sun" : "moon"} />
-            </button>
-            <button className="button ghost logout-btn icon-badge" onClick={logout} title="Logout" aria-label="Logout">
-              <UiIcon name="logout" />
-            </button>
           </div>
           {isMobile ? (
             <button className="icon-btn close-sidebar" type="button" onClick={() => setMobileSidebarOpen(false)}>
@@ -624,63 +352,11 @@ export default function ChatApp() {
 
           <input
             className="search"
-            placeholder="Search by name or ID..."
+            placeholder="Search chats"
             value={chatFilter}
             onChange={(e) => setChatFilter(e.target.value)}
           />
         </div>
-
-        {userProfileOpen ? (
-          <section className="profile-panel sidebar-profile">
-            <div className="profile-head">
-              <h4>My Profile</h4>
-              <span className="chip">USER</span>
-            </div>
-            <div className="profile-grid">
-              <div className="profile-row">
-                <span className="label">User ID</span>
-                <code>{user.id}</code>
-              </div>
-              <div className="profile-row">
-                <span className="label">Public ID</span>
-                <code>@{user.public_id || "not-set"}</code>
-              </div>
-              <div className="profile-row">
-                <span className="label">Saved Messages</span>
-                <strong>{savedMessageIds.length}</strong>
-              </div>
-            </div>
-            <div className="profile-edit">
-              <label className="label" htmlFor="user-name-input">
-                Change Username
-              </label>
-              <div className="id-editor">
-                <input
-                  id="user-name-input"
-                  value={editingUserName}
-                  onChange={(e) => setEditingUserName(e.target.value)}
-                  placeholder="new username"
-                />
-              </div>
-            </div>
-            <div className="profile-edit">
-              <label className="label" htmlFor="user-public-id-input">
-                Change Public ID
-              </label>
-              <div className="id-editor">
-                <input
-                  id="user-public-id-input"
-                  value={editingUserPublicId}
-                  onChange={(e) => setEditingUserPublicId(e.target.value)}
-                  placeholder="new public id"
-                />
-                <button className="button" onClick={onSaveUserProfile}>
-                  Save Profile
-                </button>
-              </div>
-            </div>
-          </section>
-        ) : null}
 
         <div className="chat-panel">
           <div className="chat-panel-head">Recent Chats</div>
@@ -689,7 +365,6 @@ export default function ChatApp() {
               className={savedOnly ? "chat active saved-chat" : "chat saved-chat"}
               onClick={() => {
                 setSavedOnly((prev) => !prev);
-                setUserProfileOpen(false);
                 setProfileOpen(false);
                 if (isMobile) setMobileSidebarOpen(false);
               }}
@@ -708,7 +383,6 @@ export default function ChatApp() {
                   setActiveChatId(chat.id);
                   setSavedOnly(false);
                   setProfileOpen(false);
-                  setUserProfileOpen(false);
                   setManageOpen(false);
                   if (isMobile) setMobileSidebarOpen(false);
                 }}
@@ -750,7 +424,7 @@ export default function ChatApp() {
                 {newChatType === "pv" ? (
                   <>
                     <input
-                      placeholder="Search user by email or public ID"
+                      placeholder="Find user"
                       value={pvQuery}
                       onChange={(e) => setPvQuery(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && onSearchPvUsers()}
@@ -773,13 +447,13 @@ export default function ChatApp() {
                 ) : (
                   <>
                     <input
-                      placeholder="new name"
+                      placeholder="Name"
                       value={newChatName}
                       onChange={(e) => setNewChatName(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && addChat()}
                     />
                     <input
-                      placeholder="custom public id (optional)"
+                      placeholder="Public ID (optional)"
                       value={newPublicId}
                       onChange={(e) => setNewPublicId(e.target.value)}
                     />
@@ -791,7 +465,7 @@ export default function ChatApp() {
               </div>
               <div className="stack-card">
                 <input
-                  placeholder="join by public id (example: my-group)"
+                  placeholder="Join by ID"
                   value={joinPublicId}
                   onChange={(e) => setJoinPublicId(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && onJoinByPublicId()}
@@ -822,13 +496,12 @@ export default function ChatApp() {
             </h3>
             <small>{onlineCount} online</small>
           </div>
-          <div className="room-head-actions">
+          <div className="room-head-actions" ref={roomHeadActionsRef}>
             <button
               className="icon-btn round icon-badge"
               type="button"
               onClick={() => {
                 setProfileOpen((prev) => !prev);
-                setUserProfileOpen(false);
               }}
               disabled={!activeChat}
               title={profileOpen ? "Close Chat Profile" : "Open Chat Profile"}
@@ -839,7 +512,7 @@ export default function ChatApp() {
           </div>
           <input
             className="search"
-            placeholder="Search messages..."
+            placeholder="Search messages"
             value={messageFilter}
             onChange={(e) => setMessageFilter(e.target.value)}
           />
@@ -876,7 +549,7 @@ export default function ChatApp() {
                     id="chat-name-input"
                     value={editingChatName}
                     onChange={(e) => setEditingChatName(e.target.value)}
-                    placeholder="new chat name"
+                    placeholder="Chat name"
                   />
                   <button className="button" onClick={onSaveChatName}>
                     Save Name
@@ -890,7 +563,7 @@ export default function ChatApp() {
                     id="chat-public-id-input"
                     value={editingPublicId}
                     onChange={(e) => setEditingPublicId(e.target.value)}
-                    placeholder="new public id"
+                    placeholder="Public ID"
                   />
                   <button className="button" onClick={onSavePublicId}>
                     Save ID
@@ -943,6 +616,7 @@ export default function ChatApp() {
           }}
         >
           {filteredMessages.map((m) => {
+            const attachmentData = parseAttachment(m.content);
             const mine = m.user_id === user.id;
             const isEditing = editingId === m.id;
             const isSelected = selectedMessageId === m.id;
@@ -975,7 +649,7 @@ export default function ChatApp() {
                         >
                           {isSaved ? <UiIcon name="bookmark-fill" /> : <UiIcon name="bookmark" />}
                         </button>
-                        {mine && canWrite ? (
+                        {mine && canWrite && !attachmentData ? (
                           <>
                             <button className="icon-btn icon-only" onClick={() => startEdit(m)} title="Edit message">
                               <UiIcon name="edit" />
@@ -999,6 +673,19 @@ export default function ChatApp() {
                     <button className="icon-btn icon-only" onClick={cancelEdit} title="Cancel edit">
                       <UiIcon name="close" />
                     </button>
+                  </div>
+                ) : attachmentData ? (
+                  <div className="attachment-box">
+                    {String(attachmentData.mime || "").startsWith("image/") ? (
+                      <img src={attachmentData.dataUrl} alt={attachmentData.fileName} className="msg-image" />
+                    ) : String(attachmentData.mime || "").startsWith("video/") ? (
+                      <video src={attachmentData.dataUrl} controls className="msg-video" />
+                    ) : (
+                      <a href={attachmentData.dataUrl} download={attachmentData.fileName} className="button ghost">
+                        Download {attachmentData.fileName}
+                      </a>
+                    )}
+                    {attachmentData.caption ? <p>{attachmentData.caption}</p> : null}
                   </div>
                 ) : (
                   <p>{m.content}</p>
@@ -1050,7 +737,39 @@ export default function ChatApp() {
 
         <footer>
           <div className="typing">{typing.length ? `${typing.join(", ")} typing...` : "\u00A0"}</div>
+          {attachment ? (
+            <div className="attachment-chip">
+              <span>{attachment.name}</span>
+              <button className="icon-btn icon-only" onClick={clearAttachment} title="Remove attachment">
+                <UiIcon name="close" />
+              </button>
+            </div>
+          ) : null}
+          {emojiPanelOpen ? (
+            <div className="reaction-picker">
+              {quickEmojis.map((emoji) => (
+                <button key={`compose_${emoji}`} className="reaction" type="button" onClick={() => addEmojiToDraft(emoji)}>
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          ) : null}
           <div className="composer">
+            <input
+              ref={fileInputRef}
+              type="file"
+              hidden
+              onChange={(e) => {
+                pickAttachment(e.target.files?.[0]).catch(() => {});
+                e.target.value = "";
+              }}
+            />
+            <button className="button ghost" type="button" onClick={() => fileInputRef.current?.click()} disabled={!canSend}>
+              <UiIcon name="paperclip" />
+            </button>
+            <button className="button ghost" type="button" onClick={() => setEmojiPanelOpen((prev) => !prev)} disabled={!canSend}>
+              <UiIcon name="smile" />
+            </button>
             <input
               value={draft}
               disabled={!canSend}
@@ -1063,7 +782,13 @@ export default function ChatApp() {
                 });
               }}
               onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-              placeholder={savedOnly ? "Saved messages view is read-only" : canWrite ? "Write a message" : "Read-only access"}
+              placeholder={
+                savedOnly
+                  ? "Read only"
+                  : canWrite
+                    ? "Message"
+                    : "Read only"
+              }
             />
             <button className="button" onClick={sendMessage} disabled={!canSend} title="Send message">
               <UiIcon name="send" />

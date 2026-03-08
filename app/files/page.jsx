@@ -1,6 +1,5 @@
-import ExternalToolPage from "@/components/ExternalToolPage";
-import { TOOL_LINKS } from "@/lib/modules";
+import FilesApp from "@/components/files/FilesApp";
 
 export default function FilesPage() {
-  return <ExternalToolPage {...TOOL_LINKS.files} />;
+  return <FilesApp />;
 }
